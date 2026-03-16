@@ -1,0 +1,5 @@
+{
+  "name": "unconfirmedlabs-sdks",
+  "private": true,
+  "workspaces": ["packages/*"]
+}
