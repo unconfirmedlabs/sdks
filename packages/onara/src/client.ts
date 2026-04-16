@@ -7,6 +7,8 @@ import type {
   PolicyConfig,
   SponsorOptions,
   SponsorResponse,
+  SponsorEvent,
+  TransactionStatusResponse,
   OnaraErrorResponse,
 } from './types'
 
@@ -51,6 +53,7 @@ export class OnaraClient {
     const params = new URLSearchParams()
     if (options.dryRun) params.set('dryRun', 'true')
     if (options.waitForExecution === false) params.set('waitForExecution', 'false')
+    if (options.simulate === false) params.set('simulate', 'false')
 
     const query = params.toString()
     const url = `${this.baseUrl}/sponsor${query ? `?${query}` : ''}`
@@ -67,7 +70,10 @@ export class OnaraClient {
 
     if (!res.ok) {
       const body = (await res.json()) as OnaraErrorResponse
-      throw new OnaraError(body.error, res.status)
+      throw new OnaraError(body.error, res.status, {
+        digest: body.digest,
+        txStatus: body.status,
+      })
     }
 
     return res.json() as Promise<SponsorResponse>
@@ -79,8 +85,9 @@ export class OnaraClient {
     client: NonNullable<BuildTransactionOptions['client']>
     dryRun?: boolean
     waitForExecution?: boolean
+    simulate?: boolean
   }): Promise<SponsorResponse> {
-    const { transaction, signer, client, dryRun, waitForExecution } = options
+    const { transaction, signer, client, dryRun, waitForExecution, simulate } = options
 
     const { address } = await this.status()
 
@@ -95,6 +102,92 @@ export class OnaraClient {
       txBytes: toBase64(bytes),
       txSignature: signature,
       dryRun,
+      waitForExecution,
+      simulate,
+    })
+  }
+
+  // ─── Transaction status lookup ────────────────────────────────────────────
+
+  async getTransactionStatus(digest: string): Promise<TransactionStatusResponse> {
+    const res = await this.fetch(`${this.baseUrl}/sponsor/${digest}/status`)
+    return res.json() as Promise<TransactionStatusResponse>
+  }
+
+  // ─── WebSocket sponsorship ────────────────────────────────────────────────
+
+  async *sponsorWs(options: SponsorOptions): AsyncGenerator<SponsorEvent> {
+    const wsUrl = this.baseUrl.replace(/^http/, 'ws') + '/sponsor/ws'
+    const ws = new WebSocket(wsUrl)
+
+    // Wait for open
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve()
+      ws.onerror = () => reject(new OnaraError('WebSocket connection failed', 0))
+    })
+
+    // Send the request
+    ws.send(JSON.stringify({
+      sender: options.sender,
+      txBytes: options.txBytes,
+      txSignature: options.txSignature,
+      simulate: options.simulate,
+      waitForExecution: options.waitForExecution,
+    }))
+
+    // Yield events until close
+    const events: SponsorEvent[] = []
+    let done = false
+    let resolveNext: (() => void) | null = null
+
+    ws.onmessage = (evt) => {
+      events.push(JSON.parse(typeof evt.data === 'string' ? evt.data : '{}'))
+      resolveNext?.()
+    }
+    ws.onclose = () => { done = true; resolveNext?.() }
+    ws.onerror = () => { done = true; resolveNext?.() }
+
+    try {
+      while (!done || events.length > 0) {
+        if (events.length > 0) {
+          const event = events.shift()!
+          if (event.status === 'error') {
+            throw new OnaraError(event.error ?? 'Unknown error', 0, { digest: event.digest })
+          }
+          yield event
+        } else {
+          await new Promise<void>(r => { resolveNext = r })
+        }
+      }
+    } finally {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close()
+      }
+    }
+  }
+
+  async *sponsorTransactionWs(options: {
+    transaction: Transaction
+    signer: Signer
+    client: NonNullable<BuildTransactionOptions['client']>
+    simulate?: boolean
+    waitForExecution?: boolean
+  }): AsyncGenerator<SponsorEvent> {
+    const { transaction, signer, client, simulate, waitForExecution } = options
+
+    const { address } = await this.status()
+
+    transaction.setSender(signer.toSuiAddress())
+    transaction.setGasOwner(address)
+
+    const bytes = await transaction.build({ client })
+    const { signature } = await signer.signTransaction(bytes)
+
+    yield* this.sponsorWs({
+      sender: signer.toSuiAddress(),
+      txBytes: toBase64(bytes),
+      txSignature: signature,
+      simulate,
       waitForExecution,
     })
   }

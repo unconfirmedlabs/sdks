@@ -14,5 +14,8 @@ export type {
   SponsorDryRunResponse,
   SponsorExecutionResponse,
   SponsorResponse,
+  SponsorEventStatus,
+  SponsorEvent,
+  TransactionStatusResponse,
   OnaraErrorResponse,
 } from './types'

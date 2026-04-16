@@ -62,6 +62,12 @@ export type SponsorOptions = {
   txSignature: string
   dryRun?: boolean
   waitForExecution?: boolean
+  /**
+   * Run pre-flight simulation before execution. Defaults to `true`; pass `false`
+   * to skip (e.g. for fire-and-forget paths where the caller has already
+   * validated the transaction client-side).
+   */
+  simulate?: boolean
 }
 
 export type SponsorDryRunResponse = {
@@ -74,8 +80,37 @@ export type SponsorExecutionResponse = Record<string, unknown>
 
 export type SponsorResponse = SponsorDryRunResponse | SponsorExecutionResponse
 
+// ─── WebSocket Event Types ──────────────────────────────────────────────────
+
+export type SponsorEventStatus =
+  | 'received'
+  | 'validating'
+  | 'simulating'
+  | 'signing'
+  | 'submitted'
+  | 'confirming'
+  | 'confirmed'
+  | 'error'
+
+export type SponsorEvent = {
+  status: SponsorEventStatus
+  digest?: string
+  result?: Record<string, unknown>
+  error?: string
+}
+
+// ─── Transaction Status Types ───────────────────────────────────────────────
+
+export type TransactionStatusResponse = {
+  found: boolean
+  digest?: string
+  [key: string]: unknown
+}
+
 // ─── Error Types ─────────────────────────────────────────────────────────────
 
 export type OnaraErrorResponse = {
   error: string
+  digest?: string
+  status?: 'unconfirmed' | 'unknown'
 }
