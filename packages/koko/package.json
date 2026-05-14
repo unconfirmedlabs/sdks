@@ -1,0 +1,27 @@
+{
+  "name": "@unconfirmed/koko",
+  "version": "0.0.1",
+  "description": "Sui SDK client extension exposing Koko's vendor RPC methods (BatchGetCheckpoints, etc.).",
+  "type": "module",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && tsc --emitDeclarationOnly",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@mysten/sui": "^2.5.0"
+  },
+  "devDependencies": {
+    "@mysten/sui": "^2.5.0",
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.7.0"
+  }
+}
